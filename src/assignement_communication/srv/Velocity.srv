@@ -1,0 +1,7 @@
+# allows the user to drive the robot around,
+# by setting a linear and angular velocity.
+
+geometry_msgs/Vector3 linear
+geometry_msgs/Vector3 angular
+---
+string reply
