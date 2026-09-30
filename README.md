@@ -1,5 +1,7 @@
 # Assignement
 
+Simulation environment: https://github.com/CarmineD8/bme_gazebo_sensors
+
 - allows the user to drive the robot around, by setting a linear and angular velocity;
 - if the user’s input causes the robot to be “too close” to one of the obstacles (e.g., the minimum value
 of the laser scanner is below a certain threshold) moves the robot back to the previous position, to
