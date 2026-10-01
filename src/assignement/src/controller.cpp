@@ -45,13 +45,12 @@ class ControllerServiceNode : public rclcpp::Node{
             const std::shared_ptr<assignement_communication::srv::Velocity::Request> request,
             std::shared_ptr<assignement_communication::srv::Velocity::Response> response)
         {
-            geometry_msgs::msg::Twist msg;
-            msg.linear.x = request->linear.x;
-            msg.linear.y = request->linear.y;
-            msg.linear.z = request->linear.z;
-            msg.angular.x = request->angular.x;
-            msg.angular.y = request->angular.y;
-            msg.angular.z = request->angular.z;
+            last_cmd_vel_.linear.x = request->linear.x;
+            last_cmd_vel_.linear.y = request->linear.y;
+            last_cmd_vel_.linear.z = request->linear.z;
+            last_cmd_vel_.angular.x = request->angular.x;
+            last_cmd_vel_.angular.y = request->angular.y;
+            last_cmd_vel_.angular.z = request->angular.z;
 
         avg_lin_vel_.push_back(Eigen::Vector3d(request->linear.x, request->linear.y, request->linear.z));
         avg_ang_vel_.push_back(Eigen::Vector3d(request->angular.x, request->angular.y, request->angular.z));
@@ -60,7 +59,7 @@ class ControllerServiceNode : public rclcpp::Node{
             avg_ang_vel_.pop_front();
         }
 
-            publisher_->publish(msg);
+            publisher_->publish(last_cmd_vel_);
 
             response->reply = true;
             RCLCPP_INFO(this->get_logger(), "Received linear x=%.2f, y=%.2f, z=%.2f - angular x=%.2f, y=%.2f, z=%.2f; Responding with reply=%s",
@@ -115,12 +114,12 @@ class ControllerServiceNode : public rclcpp::Node{
                 return;
             }
             
-            float min_distance = std::numeric_limits<float>::infinity();
+            min_distance_ = std::numeric_limits<float>::infinity();
             int min_index = -1;
             for (size_t i = 0; i < last_scan_.ranges.size(); ++i) {
                 last_scan_.ranges[i] = std::clamp(last_scan_.ranges[i], last_scan_.range_min, last_scan_.range_max);
-                if (last_scan_.ranges[i] < min_distance) {
-                    min_distance = last_scan_.ranges[i];
+                if (last_scan_.ranges[i] < min_distance_) {
+                    min_distance_ = last_scan_.ranges[i];
                     min_index = i;
                 }
             }
@@ -136,20 +135,37 @@ class ControllerServiceNode : public rclcpp::Node{
             // LEFT = 45 deg to 135 deg
             // RIGHT = -45 deg to -135 deg
 
-            float obstacle_angle = (180.0/M_PI) * (last_scan_.angle_min + min_index * last_scan_.angle_increment);
+            obstacle_angle_ = (180.0/M_PI) * (last_scan_.angle_min + min_index * last_scan_.angle_increment);
             std::string direction;
-            if(-45 < obstacle_angle && obstacle_angle < 45) {
+            if(-45 < obstacle_angle_ && obstacle_angle_ < 45) {
                 direction = "front";
-            } else if(45 <= obstacle_angle && obstacle_angle < 135) {
+            } else if(45 <= obstacle_angle_ && obstacle_angle_ < 135) {
                 direction = "left";
-            } else if(-135 <= obstacle_angle && obstacle_angle < -45) {
+            } else if(-135 <= obstacle_angle_ && obstacle_angle_ < -45) {
                 direction = "right";
             } else {
-                direction ;
+                direction = "back";
             }
 
-            my_message_pub_->publish(assignement_communication::msg::MyMessage().set__distance(min_distance).set__direction(direction).set__threshold(threshold_));
+            my_message_pub_->publish(assignement_communication::msg::MyMessage().set__distance(min_distance_).set__direction(direction).set__threshold(threshold_));       
+
+            static bool inverted = false;
+            if (min_distance_ < threshold_ && !inverted) {
+                last_cmd_vel_.linear.x = -last_cmd_vel_.linear.x;
+                last_cmd_vel_.linear.y = -last_cmd_vel_.linear.y;
+                last_cmd_vel_.linear.z = -last_cmd_vel_.linear.z;
+                last_cmd_vel_.angular.x = -last_cmd_vel_.angular.x;
+                last_cmd_vel_.angular.y = -last_cmd_vel_.angular.y;
+                last_cmd_vel_.angular.z = -last_cmd_vel_.angular.z;
+                inverted = true;
+                publisher_->publish(last_cmd_vel_);
+                RCLCPP_WARN(this->get_logger(), "Obstacle detected at %.2f m in direction %.2f deg. Inverting last_cmd_vel_ to avoid collision.", min_distance_, obstacle_angle_);
+            } else if (min_distance_ >= threshold_) {
+                inverted = false;
+            }
+
         }
+
 
     rclcpp::Service<assignement_communication::srv::Velocity>::SharedPtr vel_service_;
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr publisher_;
@@ -162,9 +178,14 @@ class ControllerServiceNode : public rclcpp::Node{
 
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
     sensor_msgs::msg::LaserScan last_scan_;
+    float min_distance_;
+    double obstacle_angle_;
 
     rclcpp::TimerBase::SharedPtr timer_;
     rclcpp::Publisher<assignement_communication::msg::MyMessage>::SharedPtr my_message_pub_;
+
+    geometry_msgs::msg::Twist last_cmd_vel_;
+    
 };
 
 
