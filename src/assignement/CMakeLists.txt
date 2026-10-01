@@ -10,11 +10,14 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(assignement_communication REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 
 add_executable(controller src/controller.cpp)
 
 ament_target_dependencies(controller rclcpp geometry_msgs assignement_communication)
+
+target_link_libraries(controller Eigen3::Eigen)
 
 install(TARGETS controller DESTINATION lib/${PROJECT_NAME})
 
