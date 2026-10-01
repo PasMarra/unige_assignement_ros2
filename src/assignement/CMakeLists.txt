@@ -11,11 +11,12 @@ find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(assignement_communication REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 
 add_executable(controller src/controller.cpp)
 
-ament_target_dependencies(controller rclcpp geometry_msgs assignement_communication)
+ament_target_dependencies(controller rclcpp geometry_msgs assignement_communication sensor_msgs)
 
 target_link_libraries(controller Eigen3::Eigen)
 

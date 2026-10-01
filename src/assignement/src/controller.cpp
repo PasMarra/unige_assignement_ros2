@@ -4,6 +4,8 @@
 #include "assignement_communication/srv/threshold.hpp"
 #include "assignement_communication/srv/avg_velocity.hpp"
 #include <Eigen/Dense>
+#include "sensor_msgs/msg/laser_scan.hpp"
+#include "assignement_communication/msg/my_message.hpp"
 
 class ControllerServiceNode : public rclcpp::Node{
     public:
@@ -25,6 +27,16 @@ class ControllerServiceNode : public rclcpp::Node{
                 "avg_velocity_srv",
                 std::bind(&ControllerServiceNode::avgvel_service_cb, this, std::placeholders::_2)
             );
+
+            scan_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
+                "/scan",
+                10,
+                std::bind(&ControllerServiceNode::scan_cb, this, std::placeholders::_1)
+            );
+
+            timer_ = this->create_wall_timer(std::chrono::milliseconds(50), std::bind(&ControllerServiceNode::timer_cb, this));
+
+            my_message_pub_ = this->create_publisher<assignement_communication::msg::MyMessage>("my_message_topic", 10);
 
             RCLCPP_INFO(this->get_logger(), "ControllerServiceNode ready.");
         }
@@ -91,6 +103,54 @@ class ControllerServiceNode : public rclcpp::Node{
                         response->linear.x, response->linear.y, response->linear.z, response->angular.x, response->angular.y, response->angular.z);
         }
 
+        void scan_cb(const sensor_msgs::msg::LaserScan::SharedPtr msg)
+        {
+            last_scan_ = *msg;
+        }
+
+        void timer_cb(){
+            
+            if (last_scan_.ranges.empty()) {
+                RCLCPP_WARN(this->get_logger(), "No laser scan data received yet.");
+                return;
+            }
+            
+            float min_distance = std::numeric_limits<float>::infinity();
+            int min_index = -1;
+            for (size_t i = 0; i < last_scan_.ranges.size(); ++i) {
+                last_scan_.ranges[i] = std::clamp(last_scan_.ranges[i], last_scan_.range_min, last_scan_.range_max);
+                if (last_scan_.ranges[i] < min_distance) {
+                    min_distance = last_scan_.ranges[i];
+                    min_index = i;
+                }
+            }
+
+            // From ros2 interface show sensor_msgs/msg/LaserScan
+            // the first ray in the scan.
+            //
+            // in frame frame_id, angles are measured around
+            // the positive Z axis (counterclockwise, if Z is up)
+            // with zero angle being forward along the x axis
+
+            // FRONT = +- 45 deg
+            // LEFT = 45 deg to 135 deg
+            // RIGHT = -45 deg to -135 deg
+
+            float obstacle_angle = (180.0/M_PI) * (last_scan_.angle_min + min_index * last_scan_.angle_increment);
+            std::string direction;
+            if(-45 < obstacle_angle && obstacle_angle < 45) {
+                direction = "front";
+            } else if(45 <= obstacle_angle && obstacle_angle < 135) {
+                direction = "left";
+            } else if(-135 <= obstacle_angle && obstacle_angle < -45) {
+                direction = "right";
+            } else {
+                direction ;
+            }
+
+            my_message_pub_->publish(assignement_communication::msg::MyMessage().set__distance(min_distance).set__direction(direction).set__threshold(threshold_));
+        }
+
     rclcpp::Service<assignement_communication::srv::Velocity>::SharedPtr vel_service_;
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr publisher_;
 
@@ -99,6 +159,12 @@ class ControllerServiceNode : public rclcpp::Node{
 
     rclcpp::Service<assignement_communication::srv::AvgVelocity>::SharedPtr avgvel_service_;
     std::list<Eigen::Vector3d> avg_lin_vel_, avg_ang_vel_;
+
+    rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub_;
+    sensor_msgs::msg::LaserScan last_scan_;
+
+    rclcpp::TimerBase::SharedPtr timer_;
+    rclcpp::Publisher<assignement_communication::msg::MyMessage>::SharedPtr my_message_pub_;
 };
 
 
